@@ -1,0 +1,11 @@
+[package]
+name = "rust-lib"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+async-task = { version = "4.3" }
+libc = "0.2"
