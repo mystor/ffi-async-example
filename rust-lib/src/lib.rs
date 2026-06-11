@@ -1,7 +1,8 @@
+use std::ffi::c_void;
 use std::time::Duration;
 
 mod executor;
-mod wrap;
+mod jni;
 
 // An extremely legitimate function which needs to do some expensive sleeping
 // off of the working thread.
@@ -14,15 +15,9 @@ async fn async_add(left: u64, right: u64) -> u64 {
     in_parallel.await + right
 }
 
+// The wrapper to turn it into a UniFFI function - Actual UniFFI would need to
+// do more here for error handling, marshalling & unmarshalling, etc.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn uniffi_async_add(
-    left: u64,
-    right: u64,
-    resolve: unsafe extern "C" fn(*mut libc::c_void, u64),
-    closure: *mut libc::c_void,
-) {
-    let future = async_add(left, right);
-    unsafe {
-        wrap::wrap_future(future, resolve, closure);
-    }
+pub unsafe extern "C" fn uniffi_async_add(left: u64, right: u64) -> *mut c_void {
+    executor::into_raw_task(async_add(left, right))
 }

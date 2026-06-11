@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-async-task = { version = "4.3" }
-libc = "0.2"
+async-task = "4.7"
+jni = "0.22"
