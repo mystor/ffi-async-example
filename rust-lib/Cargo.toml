@@ -9,3 +9,4 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 async-task = "4.7"
 jni = "0.22"
+pin-project-lite = "0.2"

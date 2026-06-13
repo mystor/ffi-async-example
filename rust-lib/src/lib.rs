@@ -18,6 +18,7 @@ async fn async_add(left: u64, right: u64) -> u64 {
 // The wrapper to turn it into a UniFFI function - Actual UniFFI would need to
 // do more here for error handling, marshalling & unmarshalling, etc.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn uniffi_async_add(left: u64, right: u64) -> *mut c_void {
-    executor::into_raw_task(async_add(left, right))
+pub unsafe extern "C" fn uniffi_async_add(left: u64, right: u64, on_complete: *mut c_void) {
+    let future = async_add(left, right);
+    unsafe { executor::wrap_task(future, on_complete) }
 }

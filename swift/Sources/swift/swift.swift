@@ -3,26 +3,11 @@ import Foundation
 import RustLib
 import Synchronization
 
-private final class RustWaker: @unchecked Sendable {
-  private let state: Mutex<CheckedContinuation<Void, Never>?> = Mutex(nil)
+final class CompleteCallback {
+  let callback: (UnsafeMutableRawPointer?) -> Void
 
-  func wake() {
-    let continuation = state.withLock { state in state.take() }
-    if let continuation {
-      continuation.resume()
-    }
-  }
-
-  func wait_poll(_ poll: (UnsafeMutableRawPointer) -> Bool) async -> Bool {
-    var ready = false
-    await withCheckedContinuation { continuation in
-      state.withLock { state in state = continuation }
-      ready = poll(Unmanaged.passUnretained(self).toOpaque())
-      if ready {
-        wake()
-      }
-    }
-    return ready
+  init(_ callback: @escaping (UnsafeMutableRawPointer?) -> Void) {
+    self.callback = callback
   }
 }
 
@@ -40,49 +25,18 @@ private let executorVTable = UniFFIExecutorVTable(
       }
     }
   },
-  waker_clone: { waker in
-    _ = Unmanaged<RustWaker>.fromOpaque(waker!).retain()
-    return waker
-  },
-  waker_wake: { waker in
-    Unmanaged<RustWaker>.fromOpaque(waker!).takeRetainedValue().wake()
-  },
-  waker_wake_by_ref: { waker in
-    Unmanaged<RustWaker>.fromOpaque(waker!).takeUnretainedValue().wake()
-  },
-  waker_drop: { waker in
-    Unmanaged<RustWaker>.fromOpaque(waker!).release()
+  complete: { closure, result in
+    Unmanaged<CompleteCallback>.fromOpaque(closure!).takeRetainedValue().callback(result)
   }
 )
 
-private func pollTask<Result>(task: UnsafeMutableRawPointer, result: inout Result) async throws {
-  let waker = RustWaker()
-
-  try await withTaskCancellationHandler {
-    while !Task.isCancelled {
-      let done = await waker.wait_poll { wakerPtr in
-        withUnsafeMutablePointer(to: &result) { resultPointer in
-          uniffi_task_poll(task, wakerPtr, resultPointer)
-        }
-      }
-      if done {
-        return
-      }
+private func asyncAdd(_ left: UInt64, _ right: UInt64) async -> UInt64 {
+  await withCheckedContinuation { continuation in
+    let callback = CompleteCallback { result in
+      continuation.resume(returning: result!.load(fromByteOffset: 0, as: UInt64.self))
     }
-
-    uniffi_task_cancel(task)
-    throw CancellationError()
-  } onCancel: {
-    waker.wake()
+    uniffi_async_add(left, right, Unmanaged.passRetained(callback).toOpaque());
   }
-}
-
-private func asyncAdd(_ left: UInt64, _ right: UInt64) async throws -> UInt64 {
-  let task = uniffi_async_add(left, right)!
-  var result: UInt64 = 0
-
-  try await pollTask(task: task, result: &result)
-  return result
 }
 
 @main
@@ -93,7 +47,7 @@ struct swift {
     }
 
     let start = DispatchTime.now()
-    let result = try await asyncAdd(5, 10)
+    let result = await asyncAdd(5, 10)
     let elapsed = DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds
     let elapsedMs = Double(elapsed) / 1_000_000.0
 
